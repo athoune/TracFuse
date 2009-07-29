@@ -14,6 +14,7 @@ from time import time
 import httplib
 import base64
 import os
+import re
 
 def slash(path):
 	"handles first slash"
@@ -22,19 +23,6 @@ def slash(path):
 	if path[0] != '/':
 		return '/' + path
 	return path
-
-def fetch(url, method="GET"):
-	"http fetching, with authentification"
-	truc = trac._ServerProxy__host.split('@')
-	login, passwd = truc[0].split(':')
-	domain = truc[1]
-	base64string = base64.encodestring('%s:%s' % (login, passwd))[:-1]
-	authheader =  "Basic %s" % base64string
-	conn = httplib.HTTPSConnection(domain)
-	conn.request(method, unicode(url).encode('utf8'), None, {'Authorization': authheader})
-	res = conn.getresponse()
-	print res.status, res.reason, url.encode('ascii', 'ignore')
-	return res
 
 class Stockage(object):
 	directory = dict(
@@ -85,15 +73,16 @@ class PieceJointe(LoggingMixIn, Operations):
 	flush = None
 	getxattr = None
 	listxattr = None
-	def __init__(self, stockage=None):
+	def __init__(self, trac, stockage=None):
+		self.trac = trac
 		if stockage != None:
 			self.stockage = stockage
 			return
 		self.stockage = Stockage()
-		for page in trac.wiki.getAllPages():
+		for page in self.trac.xmlrpc.wiki.getAllPages():
 			self.stockage.addFolder(page)
-			multicall.wiki.listAttachments(page)
-		for pieces in multicall():
+			self.trac.multicall.wiki.listAttachments(page)
+		for pieces in self.trac.multicall():
 			for piece in pieces:
 				self.stockage.addFile(piece)
 	def __del__(self):
@@ -101,7 +90,7 @@ class PieceJointe(LoggingMixIn, Operations):
 		pass
 	def HEAD(self, path):
 		"deprecated"
-		return fetch("/trac/ohmstudio/raw-attachment/wiki/%s" % path, "HEAD")
+		return self.trac.fetch("/trac/ohmstudio/raw-attachment/wiki/%s" % path, "HEAD")
 	def open(self, path, flags):
 		return 1
 	def getattr(self, path, fh=None):
@@ -110,7 +99,7 @@ class PieceJointe(LoggingMixIn, Operations):
 			raise OSError(ENOENT, '')
 		attr = self.stockage[path]
 		if attr['st_size'] != 0:
-			attr['st_size'] = int(fetch("/trac/ohmstudio/raw-attachment/wiki%s" % path, 'HEAD').getheader('content-length', 0))
+			attr['st_size'] = int(self.trac.fetch("/trac/ohmstudio/raw-attachment/wiki%s" % path, 'HEAD').getheader('content-length', 0))
 		return attr
 	def readdir(self, path, fh):
 		print "path:", path
@@ -126,6 +115,35 @@ class PieceJointe(LoggingMixIn, Operations):
 		return 0
 	def read(self, path, size, offset, fh):
 		return fetch("/trac/ohmstudio/raw-attachment/wiki%s" % path).read(offset + size)[offset:offset + size]
+
+class Trac(object):
+	def __init__(self, host, user, password):
+		self.user = user
+		self.password = password
+		url = urlparse(host)
+		if url.port == None:
+			if url.scheme == 'http':
+				port = 80
+			if url.scheme == 'https':
+				port = 443
+		else:
+			port = url.port
+		self.root = "%s://%s:%s@%s:%i%s" % (url.scheme, user, password, url.hostname, port, url.path)
+		self.xmlrpc = xmlrpclib.ServerProxy(self.root + "/login/xmlrpc")
+		self.multicall = xmlrpclib.MultiCall(self.xmlrpc)
+		self.url = url
+	def fetch(self, url, method="GET"):
+		"http fetching, with authentification"
+		base64string = base64.encodestring('%s:%s' % (self.user, self.password))[:-1]
+		authheader =  "Basic %s" % base64string
+		conn = httplib.HTTPSConnection(self.url.hostname)
+		conn.request(method, unicode(url).encode('utf8'), None, {'Authorization': authheader})
+		res = conn.getresponse()
+		#print res.status, res.reason, url.encode('ascii', 'ignore')
+		return res
+	def title(self):
+		"Trac title"
+		return re.compile("<title.*?>\s+(.*?)\s+</title>", re.I).search(self.fetch(self.root).read()).group(1)
 
 class Transport(xmlrpclib.Transport):
 	"xmlrpc with basic auth"
@@ -152,18 +170,9 @@ if __name__ == "__main__":
 try :
 %s --help""" % argv[0]
 		exit()
-	url = urlparse(options.host)
-	
-	if url.port == None:
-		if url.scheme == 'http':
-			port = 80
-		if url.scheme == 'https':
-			port = 443
-	else:
-		port = url.port
-
-	trac = xmlrpclib.ServerProxy("%s://%s:%s@%s:%i%s/login/xmlrpc" % (url.scheme, options.user, options.password, url.hostname, port, url.path))
-	multicall = xmlrpclib.MultiCall(trac)
+	trac = Trac(options.host, options.user, options.password)
+	title = trac.title()
+	print title
 	
 	if options.test:
 		import unittest
@@ -208,8 +217,8 @@ try :
 						print self.pieceJointe.HEAD(piece).getheaders()
 		unittest.main()
 	else:
-		fuse = FUSE(PieceJointe(), argv[1], 
-			foreground=False, volname="Trac Ωstudio",
+		fuse = FUSE(PieceJointe(trac), argv[1], 
+			foreground=False, volname=title,
 			auto_cache=True, noappledouble=True,
 			noapplexattr=True, volicon="Trac.icns" )
 		#os.getcwd() + 
