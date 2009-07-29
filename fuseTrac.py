@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+__author__ = "Mathieu Lecarme <mathieu@garambrogne.net>"
 
 import xmlrpclib
 from optparse import OptionParser
@@ -25,6 +26,7 @@ def slash(path):
 	return path
 
 class Stockage(object):
+	"abstract hierarchy"
 	directory = dict(
 		st_mode=(S_IFDIR | 0555), 
 		st_size=0, st_ctime=time(), st_mtime=time(), st_atime=time())
@@ -117,6 +119,7 @@ class PieceJointe(LoggingMixIn, Operations):
 		return self.trac.fetch("/raw-attachment/wiki%s" % path).read(offset + size)[offset:offset + size]
 
 class Trac(object):
+	"Your Trac project, on your side"
 	def __init__(self, host, user, password):
 		self.user = user
 		self.password = password
