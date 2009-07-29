@@ -16,11 +16,25 @@ import base64
 import os
 
 def slash(path):
+	"handles first slash"
 	if path == '':
 		return '/'
 	if path[0] != '/':
 		return '/' + path
 	return path
+
+def fetch(url, method="GET"):
+	"http fetching, with authentification"
+	truc = trac._ServerProxy__host.split('@')
+	login, passwd = truc[0].split(':')
+	domain = truc[1]
+	base64string = base64.encodestring('%s:%s' % (login, passwd))[:-1]
+	authheader =  "Basic %s" % base64string
+	conn = httplib.HTTPSConnection(domain)
+	conn.request(method, unicode(url).encode('utf8'), None, {'Authorization': authheader})
+	res = conn.getresponse()
+	print res.status, res.reason, url.encode('ascii', 'ignore')
+	return res
 
 class Stockage(object):
 	directory = dict(
@@ -65,19 +79,8 @@ class Stockage(object):
 				sons.append(elems[-1])
 		return sons
 
-def fetch(url, method="GET"):
-	truc = trac._ServerProxy__host.split('@')
-	login, passwd = truc[0].split(':')
-	domain = truc[1]
-	base64string = base64.encodestring('%s:%s' % (login, passwd))[:-1]
-	authheader =  "Basic %s" % base64string
-	conn = httplib.HTTPSConnection(domain)
-	conn.request(method, unicode(url).encode('utf8'), None, {'Authorization': authheader})
-	res = conn.getresponse()
-	print res.status, res.reason, url.encode('ascii', 'ignore')
-	return res
-
 class PieceJointe(LoggingMixIn, Operations):
+	"Fuse main object"
 	access = None
 	flush = None
 	getxattr = None
@@ -125,6 +128,7 @@ class PieceJointe(LoggingMixIn, Operations):
 		return fetch("/trac/ohmstudio/raw-attachment/wiki%s" % path).read(offset + size)[offset:offset + size]
 
 class Transport(xmlrpclib.Transport):
+	"xmlrpc with basic auth"
 	def make_connection(self, host):
 		self.host = host
 		return httplib.HTTP()
@@ -158,7 +162,7 @@ try :
 	else:
 		port = url.port
 
-	trac = xmlrpclib.ServerProxy("%s://%s:%i/%s/login/xmlrpc" % (url.scheme, url.hostname, port, url.path), transport=Transport(options.user, options.password))
+	trac = xmlrpclib.ServerProxy("%s://%s:%s@%s:%i%s/login/xmlrpc" % (url.scheme, options.user, options.password, url.hostname, port, url.path))
 	multicall = xmlrpclib.MultiCall(trac)
 	
 	if options.test:
