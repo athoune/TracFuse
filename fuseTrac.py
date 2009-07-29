@@ -90,7 +90,7 @@ class PieceJointe(LoggingMixIn, Operations):
 		pass
 	def HEAD(self, path):
 		"deprecated"
-		return self.trac.fetch("/trac/ohmstudio/raw-attachment/wiki/%s" % path, "HEAD")
+		return self.trac.fetch("/raw-attachment/wiki/%s" % path, "HEAD")
 	def open(self, path, flags):
 		return 1
 	def getattr(self, path, fh=None):
@@ -99,7 +99,7 @@ class PieceJointe(LoggingMixIn, Operations):
 			raise OSError(ENOENT, '')
 		attr = self.stockage[path]
 		if attr['st_size'] != 0:
-			attr['st_size'] = int(self.trac.fetch("/trac/ohmstudio/raw-attachment/wiki%s" % path, 'HEAD').getheader('content-length', 0))
+			attr['st_size'] = int(self.trac.fetch("/raw-attachment/wiki%s" % path, 'HEAD').getheader('content-length', 0))
 		return attr
 	def readdir(self, path, fh):
 		print "path:", path
@@ -114,7 +114,7 @@ class PieceJointe(LoggingMixIn, Operations):
 		self.files[path]['st_mtime'] = mtime
 		return 0
 	def read(self, path, size, offset, fh):
-		return fetch("/trac/ohmstudio/raw-attachment/wiki%s" % path).read(offset + size)[offset:offset + size]
+		return self.trac.fetch("/raw-attachment/wiki%s" % path).read(offset + size)[offset:offset + size]
 
 class Trac(object):
 	def __init__(self, host, user, password):
@@ -137,13 +137,13 @@ class Trac(object):
 		base64string = base64.encodestring('%s:%s' % (self.user, self.password))[:-1]
 		authheader =  "Basic %s" % base64string
 		conn = httplib.HTTPSConnection(self.url.hostname)
-		conn.request(method, unicode(url).encode('utf8'), None, {'Authorization': authheader})
+		conn.request(method, unicode(self.url.path + url).encode('utf8'), None, {'Authorization': authheader})
 		res = conn.getresponse()
 		#print res.status, res.reason, url.encode('ascii', 'ignore')
 		return res
 	def title(self):
 		"Trac title"
-		return re.compile("<title.*?>\s+(.*?)\s+</title>", re.I).search(self.fetch(self.root).read()).group(1)
+		return re.compile("<title.*?>\s+(.*?)\s+</title>", re.I).search(self.fetch('').read()).group(1)
 
 class Transport(xmlrpclib.Transport):
 	"xmlrpc with basic auth"
